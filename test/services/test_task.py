@@ -111,6 +111,41 @@ class TestTaskService(unittest.TestCase):
 
         self.assertEqual(combine_videos.call_args.kwargs["clip_speed"], 1.25)
 
+    def test_generate_final_videos_uses_account_folder_and_video_title(self):
+        params = VideoParams(
+            video_subject="Wild animals",
+            output_folder="tiktok/animais",
+            video_title="5 animais incríveis",
+            video_count=1,
+        )
+
+        def render_video(**kwargs):
+            Path(kwargs["output_file"]).write_bytes(b"mp4")
+            return True
+
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(tm.video_output, "output_root", return_value=temp_dir),
+            patch.object(tm.video, "combine_videos"),
+            patch.object(tm.video, "generate_video", side_effect=render_video),
+            patch.object(tm.sm.state, "update_task"),
+        ):
+            final_paths, _, warnings = tm.generate_final_videos(
+                task_id="organized-output-task",
+                params=params,
+                downloaded_videos=["material.mp4"],
+                audio_file="audio.mp3",
+                subtitle_path="",
+                audio_duration=5,
+            )
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(final_paths), 1)
+        self.assertEqual(
+            Path(final_paths[0]).parts[-3:],
+            ("tiktok", "animais", "5 animais incríveis.mp4"),
+        )
+
     def test_generate_final_videos_uses_generated_sonilo_music(self):
         """Sonilo 必须针对每条拼接后的视频生成配乐，并传给最终混音。"""
         params = VideoParams(

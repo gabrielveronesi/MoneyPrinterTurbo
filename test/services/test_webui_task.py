@@ -184,13 +184,13 @@ def test_completed_task_renders_subject_named_video_download(tmp_path):
     video_path = tmp_path / "final-1.mp4"
     video_path.write_bytes(b"video-content")
     fake_st = FakeStreamlit()
-    open_task_folder = MagicMock()
+    open_output_folder = MagicMock()
     namespace = {
         "Mapping": Mapping,
         "const": const,
         "logger": MagicMock(),
         "mimetypes": __import__("mimetypes"),
-        "open_task_folder": open_task_folder,
+        "_open_task_path": open_output_folder,
         "os": os,
         "re": re,
         "st": fake_st,
@@ -208,6 +208,7 @@ def test_completed_task_renders_subject_named_video_download(tmp_path):
             "videos": [str(video_path)],
             "warnings": [],
             "video_subject": "A day: in / Shanghai?",
+            "video_title": "Shanghai highlights",
         },
     )
 
@@ -217,7 +218,7 @@ def test_completed_task_renders_subject_named_video_download(tmp_path):
             "Download Video",
             b"video-content",
             {
-                "file_name": "A day in Shanghai.mp4",
+                "file_name": "Shanghai highlights.mp4",
                 "mime": "video/mp4",
                 "key": "download_generated_video_download-test_0",
                 "icon": ":material/download:",
@@ -226,7 +227,7 @@ def test_completed_task_renders_subject_named_video_download(tmp_path):
             },
         )
     ]
-    open_task_folder.assert_called_once_with("download-test")
+    open_output_folder.assert_called_once_with(str(tmp_path))
 
 
 def test_submit_generation_returns_while_pipeline_is_still_running():
@@ -261,6 +262,7 @@ def test_submit_generation_returns_while_pipeline_is_still_running():
             assert not finished.is_set()
             task = webui_task.sm.state.get_task(task_id)
             assert task["state"] == const.TASK_STATE_PROCESSING
+            assert task["queue_state"] == "running"
     finally:
         release.set()
         assert finished.wait(timeout=2)
@@ -269,13 +271,21 @@ def test_submit_generation_returns_while_pipeline_is_still_running():
 
 def test_submit_generation_copies_params_before_starting_worker():
     """页面后续 rerun 或流水线内部修改参数时，不能反向污染当前表单对象。"""
-    params = VideoParams(video_subject="参数隔离测试")
+    params = VideoParams(
+        video_subject="参数隔离测试",
+        output_folder="tiktok/animais",
+        video_title="Animais curiosos",
+    )
     with patch.object(webui_task._task_manager, "add_task") as add_task:
         webui_task.submit_generation("copied-params-test", params, capture_logs=False)
 
     submitted_params = add_task.call_args.kwargs["params"]
     assert submitted_params == params
     assert submitted_params is not params
+    task = webui_task.sm.state.get_task("copied-params-test")
+    assert task["queue_state"] == "queued"
+    assert task["output_folder"] == "tiktok/animais"
+    assert task["video_title"] == "Animais curiosos"
     webui_task.sm.state.delete_task("copied-params-test")
 
 
@@ -424,6 +434,29 @@ def test_terminal_logger_reload_preserves_task_log_handler():
         remove.assert_called_once_with(123)
         add.assert_called_once()
         assert logging_utils._terminal_handler_id == 456
+    finally:
+        logging_utils._terminal_handler_id = previous_handler_id
+
+
+def test_terminal_logger_configures_unicode_safe_stream():
+    """Windows console streams must accept Unicode log messages."""
+    previous_handler_id = logging_utils._terminal_handler_id
+    sink = MagicMock()
+    try:
+        with (
+            patch.object(logging_utils.logger, "remove"),
+            patch.object(logging_utils.logger, "add", return_value=456),
+        ):
+            logging_utils._terminal_handler_id = 123
+            logging_utils.configure_terminal_logger(
+                sink=sink,
+                level="DEBUG",
+                colorize=True,
+            )
+
+        sink.reconfigure.assert_called_once_with(
+            encoding="utf-8", errors="backslashreplace"
+        )
     finally:
         logging_utils._terminal_handler_id = previous_handler_id
 

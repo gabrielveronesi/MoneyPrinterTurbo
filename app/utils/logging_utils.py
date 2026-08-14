@@ -33,6 +33,12 @@ def format_log_record(record):
         relative_path = os.path.relpath(file_path, PROJECT_ROOT)
         record["file"].path = f"./{relative_path}"
 
+    # Keep the serialized log format stable across operating systems. These
+    # paths are displayed in the WebUI and can also be consumed by clients, so
+    # exposing Windows-only separators would make the same record platform
+    # dependent.
+    record["file"].path = record["file"].path.replace("\\", "/")
+
     # 日志消息有时会包含任务文件的绝对路径。统一缩短为项目相对路径，可以
     # 避免 WebUI 和终端因初始化入口不同而展示两套内容。
     record["message"] = record["message"].replace(PROJECT_ROOT, ".")
@@ -50,6 +56,19 @@ def configure_terminal_logger(sink, level: str, colorize: bool = True) -> int:
     global _terminal_handler_id
 
     with _terminal_handler_lock:
+        # Windows commonly exposes stdout as cp1252 when the process is
+        # redirected or launched from an older shell. Application logs and
+        # user-provided subjects are Unicode, so that default would make the
+        # logging sink fail even though the video pipeline itself succeeds.
+        reconfigure = getattr(sink, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="backslashreplace")
+            except (AttributeError, OSError, ValueError):
+                # Some wrapped or already-closed streams expose reconfigure
+                # without accepting changes. Loguru can still use those sinks.
+                pass
+
         if _terminal_handler_id is not None:
             try:
                 logger.remove(_terminal_handler_id)

@@ -1,6 +1,17 @@
 {
   "Language": "Español",
   "Translation": {
+    "Output Organization": "**Organización de salida**",
+    "Output Folder": "Carpeta de cuenta / tema",
+    "Output Folder Placeholder": "Ejemplo: animales o tiktok/animales",
+    "Output Folder Help": "Los videos se guardan dentro de storage/outputs en esta carpeta. Use una carpeta por cuenta o tema de TikTok.",
+    "Video Title": "Título del video",
+    "Video Title Placeholder": "Ejemplo: 5 animales que sobreviven a todo",
+    "Video Title Help": "Se usa solamente como nombre del archivo MP4 final; no cambia el prompt ni el guion.",
+    "Please Enter the Video Title": "Ingrese el título del video",
+    "Please Enter a Valid Output Folder": "Ingrese una carpeta de salida relativa válida",
+    "Task Status Queued": "En cola",
+    "Task Added to Queue": "Video añadido a la cola de generación",
     "Login Required": "Inicio de sesión requerido",
     "Please login to access settings": "Inicia sesión para acceder a la configuración",
     "Username": "Usuario",

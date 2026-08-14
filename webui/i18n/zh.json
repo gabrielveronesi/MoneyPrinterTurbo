@@ -1,6 +1,17 @@
 {
   "Language": "简体中文",
   "Translation": {
+    "Output Organization": "**输出整理**",
+    "Output Folder": "账号 / 主题文件夹",
+    "Output Folder Placeholder": "例如：animals 或 tiktok/animals",
+    "Output Folder Help": "视频会保存到 storage/outputs 下的这个文件夹。建议每个 TikTok 账号或主题使用一个文件夹。",
+    "Video Title": "视频标题",
+    "Video Title Placeholder": "例如：5种能在极端环境生存的动物",
+    "Video Title Help": "仅用于最终 MP4 文件名，不会修改提示词或文案。",
+    "Please Enter the Video Title": "请输入视频标题",
+    "Please Enter a Valid Output Folder": "请输入有效的相对输出文件夹",
+    "Task Status Queued": "排队中",
+    "Task Added to Queue": "视频已加入生成队列",
     "Login Required": "需要登录",
     "Please login to access settings": "请登录后访问配置设置 (:gray[默认用户名: admin, 密码: admin, 您可以在 config.toml 中修改])",
     "Username": "用户名",

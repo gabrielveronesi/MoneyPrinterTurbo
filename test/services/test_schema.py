@@ -36,6 +36,20 @@ class TestVideoParams(unittest.TestCase):
         self.assertEqual(params.video_clip_duration, 1)
         self.assertEqual(params.video_count, 1)
 
+    def test_normalizes_output_organization_fields(self):
+        params = VideoParams(
+            video_subject="Coffee",
+            output_folder=" tiktok\\animais ",
+            video_title="  Animais incríveis  ",
+        )
+
+        self.assertEqual(params.output_folder, "tiktok/animais")
+        self.assertEqual(params.video_title, "Animais incríveis")
+
+    def test_rejects_output_folder_traversal(self):
+        with self.assertRaises(ValidationError):
+            VideoParams(video_subject="Coffee", output_folder="../outside")
+
 
 if __name__ == "__main__":
     unittest.main()

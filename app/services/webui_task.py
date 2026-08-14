@@ -65,6 +65,7 @@ def _run_generation(
     log_handler_id = None
     worker_thread_id = threading.get_ident()
     try:
+        sm.state.update_task(task_id, queue_state="running")
         if capture_logs:
             log_handler_id = logger.add(
                 lambda message: _append_task_log(task_id, str(message)),
@@ -137,6 +138,9 @@ def submit_generation(
         state=const.TASK_STATE_PROCESSING,
         progress=0,
         video_subject=task_params.video_subject or task_params.video_script or task_id,
+        video_title=task_params.video_title,
+        output_folder=task_params.output_folder,
+        queue_state="queued",
     )
     try:
         _task_manager.add_task(

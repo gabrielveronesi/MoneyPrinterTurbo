@@ -28,7 +28,7 @@ from app.services import (
 )
 from app.services import upload_post
 from app.services import state as sm
-from app.utils import file_security, utils
+from app.utils import file_security, utils, video_output
 
 
 # 发布请求最长可等待数分钟，不能继续占用视频生成任务的并发名额。
@@ -648,8 +648,6 @@ def generate_final_videos(
         _progress += 50 / params.video_count / 2
         sm.state.update_task(task_id, progress=_progress)
 
-        final_video_path = path.join(utils.task_dir(task_id), f"final-{index}.mp4")
-
         # 视频配乐模式先明确禁用默认 BGM 解析，避免旧任务残留的 bgm_file 被
         # 误用。只有音量大于 0 才生成代理并调用付费 API；0 音量统一跳过。
         bgm_file_override = "" if video_music_provider else None
@@ -679,15 +677,22 @@ def generate_final_videos(
                 bgm_file_override = ""
                 warnings.append({"code": warning_code, "video_index": index})
 
-        logger.info(f"\n\n## generating video: {index} => {final_video_path}")
-        bgm_mix_succeeded = video.generate_video(
-            video_path=combined_video_path,
-            audio_path=audio_file,
-            subtitle_path=subtitle_path,
-            output_file=final_video_path,
-            params=params,
-            bgm_file_override=bgm_file_override,
-        )
+        with video_output.reserve_output_video_path(
+            params.output_folder,
+            params.video_title,
+            index=index,
+            total=params.video_count,
+            fallback_title=params.video_subject or "video",
+        ) as final_video_path:
+            logger.info(f"\n\n## generating video: {index} => {final_video_path}")
+            bgm_mix_succeeded = video.generate_video(
+                video_path=combined_video_path,
+                audio_path=audio_file,
+                subtitle_path=subtitle_path,
+                output_file=final_video_path,
+                params=params,
+                bgm_file_override=bgm_file_override,
+            )
         if (
             video_music_provider is not None
             and bgm_file_override
@@ -1211,6 +1216,11 @@ def _run_pipeline(
             "video",
             "failed to generate final video",
         )
+
+    # Keep the exact user-facing paths in the durable task manifest. Runtime
+    # state may be in memory, but the task manager can recover these outputs
+    # after an application restart without scanning unrelated account folders.
+    task_artifacts.patch_script_data(task_id, output_videos=final_video_paths)
 
     logger.success(
         f"task {task_id} finished, generated {len(final_video_paths)} videos."

@@ -1,6 +1,17 @@
 {
   "Language": "Português",
   "Translation": {
+    "Output Organization": "**Organização da saída**",
+    "Output Folder": "Pasta da conta / tema",
+    "Output Folder Placeholder": "Exemplo: animais ou tiktok/animais",
+    "Output Folder Help": "Os vídeos serão salvos dentro de storage/outputs nesta pasta. Use uma pasta para cada conta ou tema do TikTok.",
+    "Video Title": "Título do vídeo",
+    "Video Title Placeholder": "Exemplo: 5 animais que sobrevivem a tudo",
+    "Video Title Help": "Usado somente como nome do arquivo MP4 final; não altera o prompt nem o roteiro.",
+    "Please Enter the Video Title": "Informe o título do vídeo",
+    "Please Enter a Valid Output Folder": "Informe uma pasta de saída relativa válida",
+    "Task Status Queued": "Na fila",
+    "Task Added to Queue": "Vídeo adicionado à fila de geração",
     "Login Required": "Login Necessário",
     "Please login to access settings": "Por favor, faça login para acessar as configurações",
     "Username": "Nome de usuário",

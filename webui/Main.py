@@ -49,7 +49,7 @@ from app.services import state as sm
 from app.services import task as tm
 from app.services import version_checker
 from app.utils.logging_utils import configure_terminal_logger
-from app.utils import utils
+from app.utils import utils, video_output
 
 st.set_page_config(
     page_title="MoneyPrinterTurbo",
@@ -312,6 +312,8 @@ def _initialize_session_state():
     )
 
     defaults = {
+        "output_folder_input": "geral",
+        "video_title_input": "",
         "video_subject": "",
         "video_script": "",
         "video_terms": "",
@@ -395,6 +397,17 @@ def _find_final_task_video(task_path: str) -> str:
 
     _, file_name = min(candidates, key=lambda item: item[0])
     return os.path.join(task_path, file_name)
+
+
+def _find_persisted_output_video(script_data: Mapping | None) -> str:
+    """Return the first valid user-facing output recorded for a task."""
+    if not isinstance(script_data, Mapping):
+        return ""
+    for candidate in script_data.get("output_videos") or []:
+        resolved = video_output.resolve_existing_output_video(candidate)
+        if resolved:
+            return resolved
+    return ""
 
 
 def _build_restore_upload_requirements(params: Mapping) -> dict:
@@ -495,19 +508,23 @@ def _prepare_generation_task():
     # 顶部任务管理入口就能在同一次 rerun 中显示“生成中”数量。
     task_id = str(uuid4())
     st.session_state["pending_generation_task_id"] = task_id
-    subject = st.session_state.get("video_subject") or st.session_state.get(
-        "video_script"
+    subject = (
+        st.session_state.get("video_title_input")
+        or st.session_state.get("video_subject")
+        or st.session_state.get("video_script")
     )
     _add_active_generation_task(task_id, subject=subject)
 
 
-def _task_state_label(state, has_video):
+def _task_state_label(state, has_video, queue_state=None):
     normalized_state = _normalize_task_state(state)
     if normalized_state == const.TASK_STATE_COMPLETE:
         return tr("Task Status Complete")
     if normalized_state == const.TASK_STATE_FAILED:
         return tr("Task Status Failed")
     if normalized_state == const.TASK_STATE_PROCESSING:
+        if queue_state == "queued":
+            return tr("Task Status Queued")
         return tr("Task Status Processing")
     if has_video:
         return tr("Task Status Complete")
@@ -560,9 +577,14 @@ def _scan_history_tasks(limit=30):
     for mtime, name, task_path in task_entries[:limit]:
         script_data = _safe_load_task_script(task_path)
         params_data = script_data.get("params", {}) if script_data else {}
-        video_file = _find_final_task_video(task_path)
+        video_file = _find_persisted_output_video(
+            script_data
+        ) or _find_final_task_video(task_path)
+        video_title = params_data.get("video_title") or ""
+        output_folder = params_data.get("output_folder") or "geral"
         subject = (
-            params_data.get("video_subject")
+            video_title
+            or params_data.get("video_subject")
             or script_data.get("script", "")[:40]
             or name
         )
@@ -575,6 +597,9 @@ def _scan_history_tasks(limit=30):
                 "mtime": mtime,
                 "task_path": task_path,
                 "video_file": video_file,
+                "video_title": video_title,
+                "output_folder": output_folder,
+                "queue_state": None,
                 "source": "history",
             }
         )
@@ -602,8 +627,13 @@ def _collect_task_summaries(limit=20):
         video_file = (
             video_files[0] if video_files else history_task.get("video_file", "")
         )
+        video_title = task.get("video_title") or history_task.get("video_title", "")
+        output_folder = task.get("output_folder") or history_task.get(
+            "output_folder", "geral"
+        )
         subject = (
-            task.get("video_subject")
+            video_title
+            or task.get("video_subject")
             or history_task.get("subject")
             or (task.get("script", "")[:40] if task.get("script") else "")
             or task_id
@@ -620,6 +650,9 @@ def _collect_task_summaries(limit=20):
             else history_task.get("mtime", 0),
             "task_path": task_path,
             "video_file": video_file,
+            "video_title": video_title,
+            "output_folder": output_folder,
+            "queue_state": task.get("queue_state"),
             "source": "runtime",
         }
 
@@ -645,6 +678,9 @@ def _collect_task_summaries(limit=20):
             or history_task.get("mtime", datetime.now().timestamp()),
             "task_path": task_path,
             "video_file": history_task.get("video_file", ""),
+            "video_title": history_task.get("video_title", ""),
+            "output_folder": history_task.get("output_folder", "geral"),
+            "queue_state": history_task.get("queue_state", "queued"),
             "source": "active",
         }
 
@@ -653,9 +689,15 @@ def _collect_task_summaries(limit=20):
 
 
 def _open_task_path(task_path):
-    tasks_root = os.path.abspath(utils.task_dir())
+    allowed_roots = [
+        os.path.abspath(utils.task_dir()),
+        os.path.abspath(video_output.output_root(create=True)),
+    ]
     normalized_path = os.path.abspath(task_path)
-    if not normalized_path.startswith(tasks_root + os.sep):
+    if not any(
+        normalized_path == root or normalized_path.startswith(root + os.sep)
+        for root in allowed_roots
+    ):
         logger.warning(f"invalid task folder path: {normalized_path}")
         return
     if os.path.isdir(normalized_path):
@@ -663,12 +705,17 @@ def _open_task_path(task_path):
 
 
 def _open_task_video(video_file):
-    tasks_root = os.path.abspath(utils.task_dir())
+    allowed_roots = [
+        os.path.abspath(utils.task_dir()),
+        os.path.abspath(video_output.output_root(create=True)),
+    ]
     normalized_file = os.path.abspath(video_file)
 
-    # 视频路径来自任务目录扫描或运行期状态。这里仍然限制只能打开任务目录
-    # 内的文件，避免 UI 操作被异常路径扩展成任意本地文件打开能力。
-    if not normalized_file.startswith(tasks_root + os.sep):
+    # 视频路径来自任务目录扫描或运行期状态。只允许打开任务临时目录或
+    # 受控输出目录内的文件，避免异常路径扩展成本地任意文件打开能力。
+    if not any(
+        normalized_file.startswith(root + os.sep) for root in allowed_roots
+    ):
         logger.warning(f"invalid task video path: {normalized_file}")
         return
     if not os.path.isfile(normalized_file):
@@ -791,7 +838,11 @@ def _render_task_table(filtered_tasks, key_prefix):
                     [1.1, 1.7, 3.0, 0.8, 1.6],
                     vertical_alignment="center",
                 )
-                row_cols[0].write(_task_state_label(task["state"], has_video))
+                row_cols[0].write(
+                    _task_state_label(
+                        task["state"], has_video, task.get("queue_state")
+                    )
+                )
                 row_cols[1].write(_format_task_time(task["mtime"]))
                 row_cols[2].write(_format_task_subject(task["subject"]))
                 row_cols[3].write(f"{task['progress']}%")
@@ -822,7 +873,12 @@ def _render_task_table(filtered_tasks, key_prefix):
                         icon=":material/folder_open:",
                         help=open_label,
                     ):
-                        _open_task_path(task["task_path"])
+                        open_path = (
+                            os.path.dirname(task["video_file"])
+                            if has_video
+                            else task["task_path"]
+                        )
+                        _open_task_path(open_path)
 
                 with action_cols[2]:
                     restore_label = tr("Regenerate Task")
@@ -974,6 +1030,9 @@ def _apply_pending_task_restore():
     video_terms = params.get("video_terms") or ""
     if isinstance(video_terms, list):
         video_terms = ", ".join(str(term) for term in video_terms)
+
+    st.session_state["output_folder_input"] = params.get("output_folder") or "geral"
+    st.session_state["video_title_input"] = params.get("video_title") or ""
 
     # 文案与高级脚本设置。
     st.session_state["video_subject"] = params.get("video_subject") or ""
@@ -1418,7 +1477,8 @@ def _render_generation_task_snapshot(task_id, task):
     state = _normalize_task_state(task.get("state"))
     progress = max(0, min(100, int(task.get("progress", 0) or 0)))
     if state == const.TASK_STATE_PROCESSING:
-        st.info(tr("Generating Video"))
+        is_queued = task.get("queue_state") == "queued"
+        st.info(tr("Task Added to Queue") if is_queued else tr("Generating Video"))
         st.progress(
             progress,
             text=f"{tr('Task Progress')}: {progress}%",
@@ -1475,7 +1535,7 @@ def _render_generation_task_snapshot(task_id, task):
                 if len(video_files) > 1:
                     download_label = f"{download_label} {i + 1}"
                 download_name = _build_video_download_name(
-                    task.get("video_subject"),
+                    task.get("video_title") or task.get("video_subject"),
                     i + 1,
                     len(video_files),
                 )
@@ -1501,7 +1561,7 @@ def _render_generation_task_snapshot(task_id, task):
         # 原同步流程会在生成完成后自动打开任务目录。Fragment 可能重复运行，
         # 因此用会话标记保证每个任务只打开一次，避免连续弹出 Finder/资源管理器。
         st.session_state["opened_generation_task_id"] = task_id
-        open_task_folder(task_id)
+        _open_task_path(os.path.dirname(video_files[0]))
         logger.info(f"{tr('Video Generation Completed')}: task_id={task_id}")
 
 
@@ -3824,6 +3884,29 @@ def _render_subtitle_settings(panel, params):
                 st.toast(tr("Default Subtitle Settings Restored"))
 
 
+def _render_output_settings(params: VideoParams) -> None:
+    """Render per-task account folder and final filename settings."""
+    with st.container(key="output_organization", border=True):
+        st.markdown(tr("Output Organization"))
+        folder_column, title_column = st.columns(2)
+        with folder_column:
+            params.output_folder = st.text_input(
+                tr("Output Folder"),
+                placeholder=tr("Output Folder Placeholder"),
+                help=tr("Output Folder Help"),
+                key="output_folder_input",
+                max_chars=240,
+            )
+        with title_column:
+            params.video_title = st.text_input(
+                tr("Video Title"),
+                placeholder=tr("Video Title Placeholder"),
+                help=tr("Video Title Help"),
+                key="video_title_input",
+                max_chars=160,
+            )
+
+
 def _render_generation_controls(
     params, uploaded_files, uploaded_audio_file, uploaded_bgm_file, voice_mode
 ):
@@ -3871,8 +3954,26 @@ def _render_generation_controls(
         task_id = st.session_state.get("pending_generation_task_id") or str(uuid4())
         _add_active_generation_task(
             task_id,
-            subject=params.video_subject or params.video_script or task_id,
+            subject=(
+                params.video_title
+                or params.video_subject
+                or params.video_script
+                or task_id
+            ),
         )
+        if not str(params.video_title or "").strip():
+            _remove_active_generation_task(task_id)
+            st.error(tr("Please Enter the Video Title"))
+            st.stop()
+        try:
+            params.output_folder = video_output.normalize_output_folder(
+                params.output_folder
+            )
+        except ValueError:
+            _remove_active_generation_task(task_id)
+            st.error(tr("Please Enter a Valid Output Folder"))
+            st.stop()
+        params.video_title = str(params.video_title).strip()
         if not params.video_subject and not params.video_script:
             _remove_active_generation_task(task_id)
             st.error(tr("Video Script and Subject Cannot Both Be Empty"))
@@ -4051,7 +4152,7 @@ def _render_generation_controls(
             )
 
         try:
-            st.toast(tr("Generating Video"))
+            st.toast(tr("Task Added to Queue"))
             logger.info(tr("Start Generating Video"))
             logger.info(utils.to_json(params))
             webui_task.submit_generation(
@@ -4087,6 +4188,9 @@ def _render_application():
     if restore_applied or restore_succeeded:
         st.success(tr("Task Configuration Loaded"))
 
+    params = VideoParams(video_subject="")
+    _render_output_settings(params)
+
     with st.container(key="main_settings_grid"):
         panel = st.columns(4)
     left_panel = panel[0]
@@ -4094,7 +4198,6 @@ def _render_application():
     audio_panel = panel[2]
     right_panel = panel[3]
 
-    params = VideoParams(video_subject="")
     params.match_materials_to_script = bool(
         st.session_state.get("match_materials_to_script", False)
     )

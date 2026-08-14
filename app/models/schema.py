@@ -3,9 +3,10 @@ from enum import Enum
 from typing import Any, List, Literal, Optional, Union
 
 import pydantic
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.config import config
+from app.utils import video_output
 
 # 忽略 Pydantic 的特定警告
 warnings.filterwarnings(
@@ -77,6 +78,11 @@ class VideoParams(BaseModel):
     """
 
     video_subject: str
+    # User-facing organization is independent from the prompt. The folder is
+    # always relative to storage/outputs; the title changes only the final MP4
+    # filename and never changes the generated script.
+    output_folder: str = Field(default="geral", max_length=240)
+    video_title: str = Field(default="", max_length=160)
     video_script: str = ""  # Script used to generate the video
     video_terms: Optional[str | list] = None  # Keywords used to generate the video
     video_aspect: Optional[VideoAspect] = VideoAspect.portrait.value
@@ -121,6 +127,16 @@ class VideoParams(BaseModel):
     paragraph_number: int = Field(default=1, ge=1, le=10)
     video_script_prompt: str = Field(default="", max_length=2000)
     custom_system_prompt: str = Field(default="", max_length=8000)
+
+    @field_validator("output_folder")
+    @classmethod
+    def validate_output_folder(cls, value: str) -> str:
+        return video_output.normalize_output_folder(value)
+
+    @field_validator("video_title")
+    @classmethod
+    def normalize_video_title(cls, value: str) -> str:
+        return str(value or "").strip()
 
 
 class SubtitleRequest(BaseModel):
@@ -264,6 +280,9 @@ class TaskStatusData(BaseModel):
     progress: int = 0
     videos: Optional[List[str]] = None
     combined_videos: Optional[List[str]] = None
+    video_title: Optional[str] = None
+    output_folder: Optional[str] = None
+    queue_state: Optional[Literal["queued", "running"]] = None
     failed_stage: Optional[str] = None
     error: Optional[str] = None
     cross_post_state: Optional[

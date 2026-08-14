@@ -161,9 +161,10 @@ Pipeline stages:
   The command stops immediately after the selected stage and prints that stage's result.
 
 Output and exit status:
-  Task files are written to storage/tasks/<task-id>/. A successful command prints one
-  JSON object to stdout and exits with 0. Task failures exit with 1; argument errors
-  exit with 2. Runtime logs are written to stderr.
+  Task files are written to storage/tasks/<task-id>/ and final videos to
+  storage/outputs/<output-folder>/. A successful command prints one JSON object to
+  stdout and exits with 0. Task failures exit with 1; argument errors exit with 2.
+  Runtime logs are written to stderr.
 """,
         formatter_class=_CliHelpFormatter,
     )
@@ -441,6 +442,16 @@ Output and exit status:
 
     execution_group = parser.add_argument_group("execution")
     execution_group.add_argument(
+        "--output-folder",
+        default="geral",
+        help="relative account/theme folder under storage/outputs (default: geral)",
+    )
+    execution_group.add_argument(
+        "--video-title",
+        default="",
+        help="final MP4 filename; defaults to the video subject when omitted",
+    )
+    execution_group.add_argument(
         "--task-id",
         type=_task_id,
         default=None,
@@ -520,6 +531,8 @@ def build_video_params(args: argparse.Namespace) -> VideoParams:
 
     params_kwargs = {
         "video_subject": args.video_subject.strip(),
+        "output_folder": args.output_folder,
+        "video_title": args.video_title,
         "video_script": args.video_script,
         "video_terms": video_terms,
         "video_source": args.video_source,

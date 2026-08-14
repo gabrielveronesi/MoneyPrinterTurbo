@@ -1,6 +1,17 @@
 {
   "Language": "Türkçe",
   "Translation": {
+    "Output Organization": "**Output Organization**",
+    "Output Folder": "Account / theme folder",
+    "Output Folder Placeholder": "Example: animals or tiktok/animals",
+    "Output Folder Help": "Videos are saved under storage/outputs in this folder. Use one folder per TikTok account or theme.",
+    "Video Title": "Video title",
+    "Video Title Placeholder": "Example: 5 animals that can survive anything",
+    "Video Title Help": "Used only as the final MP4 filename; it does not change the prompt or script.",
+    "Please Enter the Video Title": "Please enter the video title",
+    "Please Enter a Valid Output Folder": "Please enter a valid relative output folder",
+    "Task Status Queued": "Queued",
+    "Task Added to Queue": "Video added to the generation queue",
     "Login Required": "Giriş Gerekli",
     "Please login to access settings": "Ayarlara erişmek için lütfen giriş yapın",
     "Username": "Kullanıcı Adı",
